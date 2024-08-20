@@ -2,11 +2,10 @@ import numpy as np
 import librosa
 import glob
 import os
-import zipfile
-import tempfile
-from tqdm import tqdm  # Progress bar
+from tqdm import tqdm
 
-def detect_leading_silence(sound, silence_threshold=.001, chunk_size=10):
+
+def detect_leading_silence(sound, silence_threshold=.001):
     trim_ms = 0
     max_num = max(sound)
     sound = sound / max_num
@@ -16,77 +15,53 @@ def detect_leading_silence(sound, silence_threshold=.001, chunk_size=10):
             trim_ms += 1
     return trim_ms
 
+
+# Function to extract MFCC features from audio files, with a progress bar
 def feature_extract():
     sr = 44100
-    window_size = 2048
-    hop_size = window_size // 2
     data = []
+    labels = []
+    label_map = {}
+    label_counter = 0
+    allowed_instruments = ['violin', 'cello', 'guitar', 'banjo', 'oboe', 'saxophone']  # Only process these instruments
 
-    # Create a temporary directory to extract the ZIP files
-    with tempfile.TemporaryDirectory() as temp_dir:
-        # Define labels for each instrument based on the ZIP file names
-        instrument_labels = {
-            'banjo': 1,
-            'bass clarinet': 2,
-            # 'bassoon': 3,
-            'cello': 4,
-            # 'clarinet': 5,
-            # 'contrabassoon': 6,
-            # 'cor anglais': 7,
-            # 'double bass': 8,
-            # 'flute': 9,
-            # 'french horn': 10,
-            'guitar': 11,
-            # 'mandolin': 12,
-            # 'oboe': 13,
-            # 'percussion': 14,
-            'saxophone': 15,
-            # 'trombone': 16,
-            # 'trumpet': 17,
-            # 'tuba': 18,
-            # 'viola': 19,
-            'violin': 20
-        }
+    # Iterate over all instrument folders in the 'all-samples' directory
+    all_folders = [folder for folder in os.listdir('all-samples') if folder in allowed_instruments]
 
-        # Process all ZIP files in the 'all-samples' folder
-        zip_files = glob.glob('all-samples/*.zip')
+    if len(all_folders) == 0:
+        print("No folders found in 'all-samples'. Please check the directory.")
+        return [], [], {}
 
-        # Iterate over each ZIP file (each instrument)
-        for zip_file in tqdm(zip_files, desc="Processing ZIP files"):
-            instrument_name = os.path.splitext(os.path.basename(zip_file))[0]  # Get instrument name
-            label = instrument_labels.get(instrument_name.lower(), 0)  # Get label for the instrument
+    print(f"Extracting features from {len(all_folders)} instruments...")
 
-            if label == 0:
-                continue  # Skip unknown instruments
+    # Use tqdm to show progress
+    for folder in tqdm(all_folders, desc="Processing Instruments"):
+        folder_path = os.path.join('all-samples', folder)
 
-            # Extract the ZIP file contents
-            with zipfile.ZipFile(zip_file, 'r') as zip_ref:
-                zip_ref.extractall(temp_dir)  # Extract to temp directory
+        if not os.path.isdir(folder_path):
+            print(f"'{folder_path}' is not a directory, skipping...")
+            continue
 
-            # Find all the extracted .mp3 files
-            mp3_files = glob.glob(f'{temp_dir}/**/*.mp3', recursive=True)
-            np.random.shuffle(mp3_files)
+        print(f"Processing folder: {folder}")
 
-            # Process each mp3 file to extract features
-            for filename in tqdm(mp3_files, desc=f"Extracting features from {instrument_name} files", leave=False):
-                try:
-                    music, sr = librosa.load(filename, sr=sr)
-                except Exception as e:
-                    print(f"Error loading {filename}: {e}")
-                    continue  # Skip the problematic file
+        if folder not in label_map:
+            label_map[folder] = label_counter
+            label_counter += 1
+        label = label_map[folder]
 
+        for filename in glob.glob(os.path.join(folder_path, '*.mp3')):
+            print(f"Processing file: {filename}")
+            try:
+                music, sr = librosa.load(filename, sr=sr)
                 start_trim = detect_leading_silence(music)
                 end_trim = detect_leading_silence(np.flipud(music))
-
-                duration = len(music)
-                trimmed_sound = music[start_trim:duration-end_trim]
-
-                # Extract MFCC features
-                mfccs = librosa.feature.mfcc(y=trimmed_sound, sr=sr)
-                aver = np.mean(mfccs, axis=1)
-                feature = aver.reshape(20)  # 20 MFCC features
-
-                data2 = [filename, feature, label]
-                data.append(data2)
-
-    return data
+                trimmed_sound = music[start_trim:len(music) - end_trim]
+                mfccs = librosa.feature.mfcc(y=trimmed_sound, sr=sr, n_mfcc=20)
+                feature = np.mean(mfccs, axis=1)
+                data.append(feature)
+                labels.append(label)
+            except Exception as e:
+                print(f"Error processing file: {filename}")
+                print(e)
+    print("Feature extraction completed.")
+    return np.array(data), np.array(labels), label_map

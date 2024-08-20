@@ -1,122 +1,142 @@
 import numpy as np
-from sklearn import svm
-from sklearn import decomposition
-from sklearn import neighbors
+from keras import Sequential
+from keras.src.saving import load_model
+from keras.src.utils import to_categorical
+from tensorflow.keras.layers import Dense, Dropout
+from sklearn.model_selection import train_test_split
+import matplotlib.pyplot as plt
+import seaborn as sns
 import joblib
-import preprocessing
+import os
 
-def unpack_data(data):
-    src_names = np.array([n[0] for n in data])
-    features = np.array([n[1] for n in data])
-    labels = np.array([n[2] for n in data])
-    return src_names, features, labels
+# Function to train the model and save it
+def train_and_save_model(data, labels, label_map):
+    # One-hot encode the labels
+    num_classes = len(label_map)
+    labels = to_categorical(labels, num_classes)
 
-def train_and_test(data, method, cv_fold=10):
-    # extract features of every image
-    fold_unit = len(data) // cv_fold  # Integer division for Python 3
-    np.random.shuffle(data)
-    accu_rates = []
-    models = []
-    for fold in range(cv_fold):
-        print('start fold:', fold)
-        train_data = data[:fold_unit * fold] + data[fold_unit * (fold + 1):]
-        test_data = data[fold_unit * fold:fold_unit * (fold + 1)]
-        model = train(train_data, method)
-        print('training done. start testing...')
-        accu_rate = test(model, test_data, method)
-        accu_rates.append(accu_rate)
-        models.append(model)
-    print(accu_rates)
-    print('average: ', np.average(accu_rates))
+    # Split the data into training and testing sets
+    X_train, X_test, y_train, y_test = train_test_split(data, labels, test_size=0.2, random_state=42)
 
-    # Cache the best model
-    best = models[np.argmax(accu_rates)]
-    save_model(best)
-    return models, np.average(accu_rates)
+    # Build a simple neural network model
+    model = Sequential()
+    model.add(Dense(256, input_shape=(data.shape[1],), activation='relu'))
+    model.add(Dropout(0.3))
+    model.add(Dense(128, activation='relu'))
+    model.add(Dropout(0.3))
+    model.add(Dense(num_classes, activation='softmax'))
 
-def train(data, method):
-    src_names, features, labels = unpack_data(data)
-    print('train feature vector dim:', features.shape)
+    # Compile the model
+    model.compile(optimizer='adam', loss='categorical_crossentropy', metrics=['accuracy'])
 
-    # initialize models
-    params = method[0]
-    pca = decomposition.PCA(n_components=params['pca_n'])
-    svc = svm.LinearSVC()
-    knn = neighbors.KNeighborsClassifier(n_neighbors=params['knn_k'], metric=params['knn_metric'])
+    # Train the model
+    history = model.fit(X_train, y_train, epochs=30, batch_size=32, validation_data=(X_test, y_test))
 
-    if 'pca' in method:
-        features = pca.fit_transform(features)
+    # Save the model in the Keras format
+    model.save('instrument_model.h5')
 
-    if 'svc' in method:
-        svc.fit(features, labels)
+    # Save the label map
+    joblib.dump(label_map, 'label_map.pkl')
 
-    if 'knn' in method:
-        knn.fit(features, labels)
+    # Plot accuracy and loss graphs
+    plot_accuracy_and_loss(history)
 
-    return pca, svc, knn
+    # Generate confusion matrix
+    generate_confusion_matrix(model, X_test, y_test, label_map)
 
-def predict(model, features, method):
-    pca, svc, knn = model
-    params = method[0]
-    if 'pca' in method:
-        features = pca.transform(features)
-    if 'svc' in method:
-        predicted = svc.predict(features)
-        return predicted
-    if 'knn' in method:
-        predicted = knn.predict(features)
-        return predicted
-    print('error: no classification method specified')
-    return []
+    # Calculate and print final accuracy score
+    test_loss, test_accuracy = model.evaluate(X_test, y_test, verbose=0)
+    print(f"\nFinal Test Accuracy: {test_accuracy * 100:.2f}%")
 
-def test(model, data, method):
-    src_names, features, labels = unpack_data(data)
-    predicted = predict(model, features, method)
+    return model
 
-    # get stats for accuracy
-    test_size = src_names.shape[0]
-    accuracy = (predicted == labels)
-    accu_rate = np.sum(accuracy) / float(test_size)
-    print(np.sum(accuracy), 'correct out of', test_size)
-    print('accuracy rate: ', accu_rate)
+# Function to plot accuracy and loss graphs
+def plot_accuracy_and_loss(history):
+    # Plot accuracy graph
+    plt.figure()
+    plt.plot(history.history['accuracy'], label='train accuracy')
+    plt.plot(history.history['val_accuracy'], label='val accuracy')
+    plt.title('Accuracy over epochs')
+    plt.xlabel('Epochs')
+    plt.ylabel('Accuracy')
+    plt.legend()
+    plt.show()
 
-    # write out all the wrongly-classified samples
-    wrongs = np.array([src_names, labels, predicted])
-    wrongs = np.transpose(wrongs)[np.invert(accuracy)]
-    with open('last_wrong.txt', 'w') as log:
-        for w in wrongs:
-            log.write('{} truly {} classified {}\n'.format(w[0], w[1], w[2]))
-    return accu_rate
+    # Plot loss graph
+    plt.figure()
+    plt.plot(history.history['loss'], label='train loss')
+    plt.plot(history.history['val_loss'], label='val loss')
+    plt.title('Loss over epochs')
+    plt.xlabel('Epochs')
+    plt.ylabel('Loss')
+    plt.legend()
+    plt.show()
 
-def save_model(model):
-    pca, svc, knn = model
-    joblib.dump(svc, 'last_svc.model')  # Save the model after training
-    return
+# Function to generate a confusion matrix
+def generate_confusion_matrix(model, X_test, y_test, label_map):
+    predictions = model.predict(X_test)
+    predicted_labels = np.argmax(predictions, axis=1)
+    true_labels = np.argmax(y_test, axis=1)
 
-def load_model(params):
-    svc = joblib.load('last_svc.model')  # Loading previously saved model
+    confusion_matrix = np.zeros((len(label_map), len(label_map)))
 
-    pca = decomposition.PCA(n_components=params['pca_n'])
-    knn = neighbors.KNeighborsClassifier(n_neighbors=params['knn_k'], metric=params['knn_metric'])
+    # Create confusion matrix
+    for i in range(len(true_labels)):
+        confusion_matrix[true_labels[i], predicted_labels[i]] += 1
 
-    return pca, svc, knn
+    sns.heatmap(confusion_matrix, annot=True, cmap='Blues', xticklabels=label_map.keys(), yticklabels=label_map.keys())
+    plt.title('Confusion Matrix')
+    plt.xlabel('Predicted Labels')
+    plt.ylabel('True Labels')
+    plt.show()
 
+# Function to load the saved model and label map
+def load_model_and_label_map():
+    model = load_model('instrument_model.h5')
+    label_map = joblib.load('label_map.pkl')
+    return model, label_map
+
+# Main function to train or load the model
 def main():
-    data = preprocessing.feature_extract()
-    print('processed data.')
-    model_params = {
-        'pca_n': 10,
-        'knn_k': 5,
-        'knn_metric': 'minkowski'
-    }
+    if not model_exists():
+        # Extract the features and labels using your feature extraction function
+        from preprocessing import feature_extract  # Assuming you have a preprocessing.py script for feature extraction
+        print("Starting feature extraction...")
+        data, labels, label_map = feature_extract()
+        print("Feature extraction complete.")
 
-    # Train and test the model, then save it
-    models, avg_accuracy = train_and_test(data, [model_params, 'svc'])
-    print(f"Average accuracy: {avg_accuracy}")
+        print("Training the model...")
+        train_and_save_model(data, labels, label_map)
+        print("Model training complete.")
+    else:
+        print("Model already exists, loading the model.")
+        model, label_map = load_model_and_label_map()
+        test_audio = input("Please provide the path to the audio file for prediction: ")
+        predict(test_audio, model, label_map)
 
-    # Uncomment this once the model is trained and saved
-    # model = load_model(model_params)
-    # test(model, data, [model_params, 'svc'])
+# Function to check if the model exists
+def model_exists():
+    return os.path.exists('instrument_model.h5') and os.path.exists('label_map.pkl')
+
+# Function to predict the instrument of a given audio file
+def predict(audio_filename, model, label_map):
+    import librosa
+    from preprocessing import detect_leading_silence
+    import numpy as np
+
+    sr = 44100
+    music, sr = librosa.load(audio_filename, sr=sr)
+    start_trim = detect_leading_silence(music)
+    end_trim = detect_leading_silence(np.flipud(music))
+    trimmed_sound = music[start_trim:len(music)-end_trim]
+
+    mfccs = librosa.feature.mfcc(y=trimmed_sound, sr=sr, n_mfcc=20)
+    feature = np.mean(mfccs, axis=1).reshape(1, -1)
+
+    prediction = model.predict(feature)
+    predicted_label = np.argmax(prediction)
+    instrument = [k for k, v in label_map.items() if v == predicted_label][0]
+    print(f"The predicted instrument is: {instrument}")
 
 if __name__ == '__main__':
     main()
