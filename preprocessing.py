@@ -21,7 +21,7 @@ def feature_extract():
     labels = []
     label_map = {}
     label_counter = 0
-    allowed_instruments = ['cel', 'cla', 'flu',] #'banjo', 'oboe', 'saxophone', 'percussion', 'flute', 'trumpet', 'clarinet', 'mandolin', 'tuba']
+    allowed_instruments = ['cel', 'cla', 'flu', 'gac', 'gel', 'org', 'pia', 'sax', 'tru', 'vio', 'voi']
 
     all_folders = [folder for folder in os.listdir('IRMAS-TrainingData') if folder in allowed_instruments]
     if len(all_folders) == 0:

@@ -79,7 +79,7 @@ def generate_confusion_matrix(model, X_test, y_test, label_map):
     conf_matrix = confusion_matrix(true_labels, predicted_labels)
 
     # Plot confusion matrix using Seaborn heatmap
-    sns.heatmap(conf_matrix, annot=True, cmap='Blues',
+    sns.heatmap(conf_matrix, annot=True, cmap='Blues', fmt='g',
                 xticklabels=label_map.keys(),
                 yticklabels=label_map.keys())
 
