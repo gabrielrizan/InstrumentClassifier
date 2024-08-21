@@ -1,14 +1,11 @@
 from classify import load_model_and_label_map
 
 def main():
-    # Load the model and label map
-    model, label_map = load_model_and_label_map()
 
-    # Predict with a new audio file
+    model, label_map = load_model_and_label_map()
     test_audio = input("Please provide the path to the audio file for prediction: ")
     predict(test_audio, model, label_map)
 
-# Function to predict the instrument of a given audio file
 def predict(audio_filename, model, label_map):
     import librosa
     from preprocessing import detect_leading_silence

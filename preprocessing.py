@@ -15,33 +15,25 @@ def detect_leading_silence(sound, silence_threshold=.001):
             trim_ms += 1
     return trim_ms
 
-
-# Function to extract MFCC features from audio files, with a progress bar
 def feature_extract():
     sr = 44100
     data = []
     labels = []
     label_map = {}
     label_counter = 0
-    allowed_instruments = ['violin', 'cello', 'guitar', 'banjo', 'oboe', 'saxophone']  # Only process these instruments
+    allowed_instruments = ['cel', 'cla', 'flu',] #'banjo', 'oboe', 'saxophone', 'percussion', 'flute', 'trumpet', 'clarinet', 'mandolin', 'tuba']
 
-    # Iterate over all instrument folders in the 'all-samples' directory
-    all_folders = [folder for folder in os.listdir('all-samples') if folder in allowed_instruments]
-
+    all_folders = [folder for folder in os.listdir('IRMAS-TrainingData') if folder in allowed_instruments]
     if len(all_folders) == 0:
-        print("No folders found in 'all-samples'. Please check the directory.")
+        print("No folders found in 'IRMAS-TrainingData'. Please check the directory.")
         return [], [], {}
-
     print(f"Extracting features from {len(all_folders)} instruments...")
 
-    # Use tqdm to show progress
-    for folder in tqdm(all_folders, desc="Processing Instruments"):
-        folder_path = os.path.join('all-samples', folder)
-
+    for folder in tqdm(all_folders, desc="Processing Instruments"): #tqdm is used for progress bar
+        folder_path = os.path.join('IRMAS-TrainingData', folder)
         if not os.path.isdir(folder_path):
             print(f"'{folder_path}' is not a directory, skipping...")
             continue
-
         print(f"Processing folder: {folder}")
 
         if folder not in label_map:
@@ -49,7 +41,7 @@ def feature_extract():
             label_counter += 1
         label = label_map[folder]
 
-        for filename in glob.glob(os.path.join(folder_path, '*.mp3')):
+        for filename in glob.glob(os.path.join(folder_path, '*.wav')):
             print(f"Processing file: {filename}")
             try:
                 music, sr = librosa.load(filename, sr=sr)
